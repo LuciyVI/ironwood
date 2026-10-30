@@ -73,22 +73,30 @@ func (d *Debug) GetPeers() (infos []DebugPeerInfo) {
 			costs[p] = d.c.router._getCost(p)
 		}
 	})
+	var peers []*peer
 	phony.Block(&d.c.peers, func() {
-		for _, peers := range d.c.peers.peers {
-			for peer := range peers {
-				var info DebugPeerInfo
-				info.Port = uint64(peer.port)
-				info.Cost = uint64(costs[peer])
-				info.Key = append(info.Key[:0], peer.key[:]...)
-				info.Priority = peer.prio
-				info.Conn = peer.conn
-				if rtt := peer.srrt.Sub(peer.srst).Round(time.Millisecond / 100); rtt > 0 {
-					info.Latency = rtt
-				}
-				infos = append(infos, info)
+		for _, keyPeers := range d.c.peers.peers {
+			for p := range keyPeers {
+				peers = append(peers, p)
 			}
 		}
 	})
+	// The timestamps belong to each peer actor. Do not block on those
+	// actors while running on the peers actor.
+	for _, peer := range peers {
+		var info DebugPeerInfo
+		phony.Block(peer, func() {
+			info.Port = uint64(peer.port)
+			info.Cost = costs[peer]
+			info.Key = append(info.Key, peer.key[:]...)
+			info.Priority = peer.prio
+			info.Conn = peer.conn
+			if rtt := peer.srrt.Sub(peer.srst).Round(time.Millisecond / 100); rtt > 0 {
+				info.Latency = rtt
+			}
+		})
+		infos = append(infos, info)
+	}
 	return
 }
 
